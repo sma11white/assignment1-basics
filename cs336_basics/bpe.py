@@ -73,7 +73,7 @@ def bpe(
     # 1. 预分词
     s = pre_token(input_path,special_tokens)
 
-    # 按词频聚合: 相同内容的词只处理一份, 增量更新时也只改一份
+    # 增量式更新
     word_freq = Counter(s)
     arr: dict[tuple[bytes, ...], int] = {
         tuple(bytes([b]) for b in w.encode("utf-8")): c
