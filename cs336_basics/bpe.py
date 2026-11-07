@@ -160,6 +160,13 @@ def bpe(
 
 
 if __name__ == "__main__":
-    s = "TODO"
-    special_tokens:list[str] = ["|end|","|start|"]
-    bpe(s,special_tokens=special_tokens)
+    import pathlib
+    f = pathlib.Path(__file__).parent.parent/"data"/"TinyStoriesV2-GPT4-train.txt"
+    special = ["<|endoftext|>"]
+    vocab_size = 10000
+    import tracemalloc
+    tracemalloc.start()
+    vocab, merges = bpe(input_path=f, special_tokens=special, vocab_size=vocab_size)
+    current, peak = tracemalloc.get_traced_memory()
+    print(f"当前内存: {current / 1024 / 1024:.1f} MB, 峰值: {peak / 1024 / 1024:.1f} MB")
+    tracemalloc.stop()
