@@ -11,13 +11,29 @@ from collections import Counter
 from .pretokenization_example import find_chunk_boundaries
 from multiprocessing import Pool
 
-def bytes_to_unicode(bytes: bytes) -> str:
-    """
-    将bytes转换为unicode字符串
-    """
-    pass
+def bytes_to_unicode() -> dict[int, str]:
+    """字节 (0-255) -> Unicode 替身字符 的双射映射表"""
+    # 1. 收集所有"安全"的可打印字节 (恒等映射区间)
+    bs = (
+        list(range(ord("!"), ord("~") + 1))      # 0x21 ~ 0x7E  (94 个)
+        + list(range(ord("¡"), ord("¬") + 1))    # 0xA1 ~ 0xAC  (12 个)
+        + list(range(ord("®"), ord("ÿ") + 1))    # 0xAE ~ 0xFF  (82 个)
+    )                                            # 共 188 个
 
-def _processs_chunk(args) -> Counter:
+    cs = bs[:]                                   # 替身初始值 = 自身
+
+    # 2. 剩下 68 个"不安全"字节, 依次分配到码点 256, 257, 258...
+    n = 0
+    for b in range(256):
+        if b not in bs:
+            bs.append(b)
+            cs.append(256 + n)
+            n += 1
+
+    # 3. 字节值 -> 替身字符
+    return dict(zip(bs, [chr(c) for c in cs]))
+
+def _processs_chunk(args) -> Counter[str]:
     """
     完整的预分词流程:原始语料 -> (去除<|endoftext|>,这里作为长文本的分隔符) -> 正则分词 -> 对得到的str列表编码为utf8,再使用bytes_to_unicode修改utf8编码 -> 统计各个bytes的个数
     """
@@ -32,14 +48,17 @@ def _processs_chunk(args) -> Counter:
         s = re.split(special_pattern,chunk)
     else:
         s = [chunk]
-    # 正则分词与编码并统计
+    # 正则分词
     counter:Counter[str] = Counter()
     PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+    vocab = bytes_to_unicode()
     for seg in s:
         if not seg:
             continue
         for token in re.findall(PAT,seg):
-            counter[bytes_to_unicode(token.encode("utf-8"))] += 1
+            # 编码统计合并
+            temp = [vocab[i] for i in list(token.encode("utf-8"))]
+            counter["".join(temp)] = 1
     return counter
 
 def pre_token(input_path: str | os.PathLike, special_tokens: list[str],split_special_token: bytes) -> dict[str,int]:
