@@ -3,6 +3,7 @@ import os
 from collections import Counter
 from .pretokenization_example import find_chunk_boundaries
 from multiprocessing import Pool
+import tqdm
 
 def bytes_to_unicode() -> dict[int, str]:
     """字节 (0-255) -> Unicode 替身字符 的双射映射表"""
@@ -109,6 +110,16 @@ def bpe(
         if len(vocab) < vocab_size:
             vocab[len(vocab)] = tok.encode("utf-8")
     merge: list[tuple[bytes, bytes]] = []
+
+    from tqdm import tqdm
+
+    pbar = tqdm(
+        total=vocab_size,
+        initial=len(vocab),   # 初始词表大小（如 256 个字节），别漏了
+        desc="BPE training",
+        unit="merge",
+    )
+
     # 3. 重复以下步骤直至达到词表大小:
     while len(vocab) < vocab_size:
     # a. 生成相邻表
@@ -131,20 +142,32 @@ def bpe(
             w = _merge_word(k, a, b, merged_str) if (a in k and b in k) else k
             new_word_freq[w] = new_word_freq.get(w, 0) + v
         word_freq = new_word_freq
+        pbar.update(1)
+    pbar.close()
     return vocab, merge
 
 
 if __name__ == "__main__":
     import pathlib
-    f = pathlib.Path(__file__).parent.parent/"data"/"temp.txt"
+    f = pathlib.Path(__file__).parent.parent/"data"/"TinyStoriesV2-GPT4-train.txt"
     special = ["<|endoftext|>"]
     vocab_size = 10000
+    out_dir = pathlib.Path(__file__).parent.parent / "data"
     import tracemalloc
     import time
+    import json
     start_time = time.time()
     tracemalloc.start()
-    temp = pre_token(input_path=f,special_tokens=special,split_special_token=special[0].encode("utf-8"))
-    print(temp) 
+    vocab, merge = bpe(input_path=f,vocab_size=vocab_size,special_tokens=special)
+    json.dump(
+        {
+            "vocab": {str(k): v.decode("latin-1") for k, v in vocab.items()},
+            "merges": [[p.decode("latin-1"), q.decode("latin-1")] for p, q in merge],
+        },
+        open(out_dir / "bpe.json", "w", encoding="utf-8"),
+        ensure_ascii=False,
+        indent=2,
+    )
     current, peak = tracemalloc.get_traced_memory()
     print(f"当前内存: {current / 1024 / 1024:.1f} MB, 峰值: {peak / 1024 / 1024:.1f} MB")
     tracemalloc.stop()
